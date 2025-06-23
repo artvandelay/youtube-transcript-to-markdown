@@ -1,0 +1,5 @@
+{
+  "name": "YouTube Transcript to Markdown",
+  "description": "A web application to extract (mocked) YouTube video transcripts and format them into downloadable Markdown.",
+  "requestFramePermissions": []
+}

@@ -1,0 +1,42 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>YouTube Transcript to Markdown</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            primary: {
+              DEFAULT: '#FF0000', // YouTube Red
+              light: '#FF4D4D',
+              dark: '#CC0000',
+            },
+            secondary: '#282828', // YouTube Dark Grey
+            accent: '#3EA6FF', // A light blue for accents
+          }
+        }
+      }
+    }
+  </script>
+<script type="importmap">
+{
+  "imports": {
+    "react-dom/": "https://esm.sh/react-dom@^19.1.0/",
+    "@google/genai": "https://esm.sh/@google/genai@^1.6.0",
+    "react/": "https://esm.sh/react@^19.1.0/",
+    "react": "https://esm.sh/react@^19.1.0"
+  }
+}
+</script>
+<link rel="stylesheet" href="/index.css">
+</head>
+<body class="bg-gray-900 text-gray-100">
+  <div id="root"></div>
+  <script type="module" src="/index.tsx"></script>
+</body>
+</html>
