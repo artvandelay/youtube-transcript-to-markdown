@@ -3,7 +3,7 @@ import { TextInput } from './components/TextInput';
 import { Button } from './components/Button';
 import { LoadingSpinner } from './components/LoadingSpinner';
 import { YouTubeIcon, DownloadIcon, ErrorIcon, ShareIcon } from './components/IconComponents'; // ShareIcon can be re-used or replaced with a CopyIcon if desired
-import { fetchMockTranscript, parseVttToMarkdown } from './services/transcriptService';
+import { fetchTranscript, parseVttToMarkdown } from './services/transcriptService';
 // Import geminiService to ensure its setup runs, though it's not directly used for transcript functionality.
 import './services/geminiService'; // Ensure this runs to initialize GeminiAI if API_KEY is present
 
@@ -29,7 +29,7 @@ const App: React.FC = () => {
       if (!youtubeUrl.includes('youtube.com/') && !youtubeUrl.includes('youtu.be/')) {
         throw new Error('Invalid YouTube URL format.');
       }
-      const rawTranscript = await fetchMockTranscript(youtubeUrl);
+      const rawTranscript = await fetchTranscript(youtubeUrl);
       const formattedMarkdown = parseVttToMarkdown(rawTranscript);
       setMarkdownTranscript(formattedMarkdown);
     } catch (err) {
@@ -93,7 +93,7 @@ const App: React.FC = () => {
             </h1>
           </div>
           <p className="text-gray-400">
-            Enter a YouTube video URL to get its (mocked) transcript in Markdown format.
+            Enter a YouTube video URL to get its real transcript in Markdown format.
           </p>
         </header>
 

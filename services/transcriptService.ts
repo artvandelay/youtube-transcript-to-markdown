@@ -1,86 +1,169 @@
+// Client-side transcript service for GitHub Pages deployment
+// This uses YouTube's internal transcript API directly from the browser
 
-// This service simulates fetching a transcript and parsing it.
-// In a real application, this would interact with a backend service
-// that uses a tool like yt-dlp.
+interface TranscriptItem {
+  text: string;
+  start: number;
+  dur: number;
+}
 
-const MOCK_VTT_TRANSCRIPT = `WEBVTT
+// Extract video ID from YouTube URL
+function extractVideoId(url: string): string {
+  const regex = /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([^&\n?#]+)/;
+  const match = url.match(regex);
+  if (!match) {
+    throw new Error('Invalid YouTube URL format');
+  }
+  return match[1];
+}
 
-00:00:00.500 --> 00:00:04.200
-Hello everyone, and welcome to this demonstration video!
+// Fetch transcript using YouTube's internal API
+export const fetchTranscript = async (youtubeUrl: string): Promise<string> => {
+  if (!youtubeUrl.trim()) {
+    throw new Error('URL cannot be empty.');
+  }
 
-00:00:04.800 --> 00:00:08.500
-Today, we're showcasing a (mocked) transcript extraction feature.
-
-00:00:09.000 --> 00:00:13.000
-This text is pre-defined and simulates what yt-dlp might provide.
-It's great for testing UI.
-
-00:00:13.500 --> 00:00:15.000
-Let's see how it looks.
-`;
-
-const MOCK_ERROR_VTT_TRANSCRIPT_INVALID_URL = `ERROR: Invalid URL`;
-const MOCK_ERROR_VTT_TRANSCRIPT_UNAVAILABLE = `ERROR: Transcript unavailable`;
-
-
-export const fetchMockTranscript = (youtubeUrl: string): Promise<string> => {
-  return new Promise((resolve, reject) => {
-    setTimeout(() => {
-      if (youtubeUrl.includes('error_invalid_url')) {
-        reject(new Error('Mock Error: The YouTube URL provided is invalid.'));
-      } else if (youtubeUrl.includes('error_unavailable_transcript')) {
-        reject(new Error('Mock Error: Transcript is unavailable for this video.'));
-      } else if (!youtubeUrl.trim()) {
-        reject(new Error('URL cannot be empty.'));
+  try {
+    const videoId = extractVideoId(youtubeUrl);
+    
+    // First, get the video page to extract transcript data
+    const videoPageResponse = await fetch(`https://www.youtube.com/watch?v=${videoId}`, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
       }
-      // Simulate success
-      resolve(MOCK_VTT_TRANSCRIPT);
-    }, 1000 + Math.random() * 1000); // Simulate network delay
-  });
+    });
+    
+    if (!videoPageResponse.ok) {
+      throw new Error('Failed to fetch video page');
+    }
+    
+    const videoPageText = await videoPageResponse.text();
+    
+    // Extract captions data from the page
+    const captionsRegex = /"captions":(\{.*?\})\}/;
+    const match = videoPageText.match(captionsRegex);
+    
+    if (!match) {
+      throw new Error('No captions found for this video. The video may not have subtitles available.');
+    }
+    
+    try {
+      const captionsData = JSON.parse(match[1] + '}');
+      const captionTracks = captionsData?.playerCaptionsTracklistRenderer?.captionTracks;
+      
+      if (!captionTracks || captionTracks.length === 0) {
+        throw new Error('No caption tracks available for this video.');
+      }
+      
+      // Find English captions or use the first available
+      let captionTrack = captionTracks.find((track: any) => 
+        track.languageCode === 'en' || track.languageCode === 'en-US'
+      ) || captionTracks[0];
+      
+      if (!captionTrack.baseUrl) {
+        throw new Error('Caption track URL not found.');
+      }
+      
+      // Fetch the actual transcript
+      const transcriptResponse = await fetch(captionTrack.baseUrl);
+      if (!transcriptResponse.ok) {
+        throw new Error('Failed to fetch transcript data');
+      }
+      
+      const transcriptXml = await transcriptResponse.text();
+      
+      // Parse XML and convert to VTT format
+      const parser = new DOMParser();
+      const xmlDoc = parser.parseFromString(transcriptXml, 'text/xml');
+      const textElements = xmlDoc.getElementsByTagName('text');
+      
+      if (textElements.length === 0) {
+        throw new Error('No transcript text found in the response.');
+      }
+      
+      // Convert to VTT format
+      let vttContent = 'WEBVTT\n\n';
+      
+      for (let i = 0; i < textElements.length; i++) {
+        const element = textElements[i];
+        const start = parseFloat(element.getAttribute('start') || '0');
+        const dur = parseFloat(element.getAttribute('dur') || '3');
+        const text = element.textContent || '';
+        
+        // Format timestamps
+        const startTime = formatTime(start);
+        const endTime = formatTime(start + dur);
+        
+        vttContent += `${startTime} --> ${endTime}\n`;
+        vttContent += `${text.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')}\n\n`;
+      }
+      
+      return vttContent;
+      
+    } catch (parseError) {
+      throw new Error('Failed to parse captions data from video page.');
+    }
+    
+  } catch (error) {
+    if (error instanceof Error) {
+      throw error;
+    }
+    throw new Error('An unknown error occurred while fetching the transcript.');
+  }
 };
 
+// Helper function to format seconds to VTT timestamp format
+function formatTime(seconds: number): string {
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const secs = Math.floor(seconds % 60);
+  const milliseconds = Math.floor((seconds % 1) * 1000);
+  
+  return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}.${milliseconds.toString().padStart(3, '0')}`;
+}
+
+// Keep the existing VTT parsing function
 export const parseVttToMarkdown = (vttContent: string): string => {
-  const lines = vttContent.split('\\n');
-  let markdownString = '';
-  let currentCaption = '';
+  const lines = vttContent.split('\n');
+  let markdown = '# Video Transcript\n\n';
+  let currentTimestamp = '';
+  let currentText = '';
 
-  for (const line of lines) {
-    const trimmedLine = line.trim();
-
-    if (trimmedLine === 'WEBVTT' || trimmedLine === '') {
-      // Skip VTT header or empty lines between captions
-      if (currentCaption) {
-          markdownString += currentCaption.trim() + '\\n\\n';
-          currentCaption = '';
-      }
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    
+    // Skip WEBVTT header and empty lines
+    if (line === 'WEBVTT' || line === '' || line.startsWith('NOTE')) {
       continue;
     }
 
-    // Check if the line is a timestamp
-    // Regex for VTT timestamp: HH:MM:SS.mmm --> HH:MM:SS.mmm (optional hours)
-    const timestampRegex = /^(?:(\d{2,}):)?([0-5]\d):([0-5]\d)\.(\d{3})\s*-->\s*(?:(\d{2,}):)?([0-5]\d):([0-5]\d)\.(\d{3})/;
-    if (timestampRegex.test(trimmedLine)) {
-      // If we have a pending caption, add it first
-      if (currentCaption) {
-        markdownString += currentCaption.trim() + '\\n\\n';
-        currentCaption = '';
+    // Check if line contains timestamp (format: 00:00:00.000 --> 00:00:00.000)
+    if (line.includes('-->')) {
+      // If we have previous content, add it to markdown
+      if (currentTimestamp && currentText) {
+        markdown += `**${currentTimestamp}**\n${currentText}\n\n`;
       }
-      // Add timestamp as bold
-      markdownString += `**${trimmedLine}**\\n`;
-    } else {
-      // This is a caption text line
-      if (currentCaption) {
-        currentCaption += ' ' + trimmedLine; // Append to multi-line caption
+      
+      // Extract start timestamp
+      currentTimestamp = line.split(' --> ')[0];
+      currentText = '';
+    } else if (line && !line.includes('-->')) {
+      // This is transcript text
+      if (currentText) {
+        currentText += ' ' + line;
       } else {
-        currentCaption = trimmedLine;
+        currentText = line;
       }
     }
   }
-  
-  // Add any remaining caption
-  if (currentCaption) {
-    markdownString += currentCaption.trim() + '\\n\\n';
+
+  // Add the last entry
+  if (currentTimestamp && currentText) {
+    markdown += `**${currentTimestamp}**\n${currentText}\n\n`;
   }
 
-  return markdownString.trim(); // Remove trailing newlines
+  return markdown;
 };
+
+// Backward compatibility
+export const fetchMockTranscript = fetchTranscript;
